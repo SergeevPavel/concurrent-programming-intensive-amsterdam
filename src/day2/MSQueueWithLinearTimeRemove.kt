@@ -18,7 +18,21 @@ class MSQueueWithLinearTimeRemove<E> : QueueWithRemove<E> {
         // TODO: When adding a new node, check whether
         // TODO: the previous tail is logically removed.
         // TODO: If so, remove it physically from the linked list.
-        TODO("Implement me!")
+        while (true) {
+            val node = Node(element)
+            val prevTail = tail.value
+            if (prevTail.next.compareAndSet(null, node)) {
+                tail.compareAndSet(prevTail, node)
+                if (prevTail.extractedOrRemoved) {
+                    prevTail.removePhysically()
+                }
+                return
+            } else {
+                prevTail.next.value?.let {
+                    tail.compareAndSet(prevTail, it)
+                }
+            }
+        }
     }
 
     override fun dequeue(): E? {
@@ -26,7 +40,15 @@ class MSQueueWithLinearTimeRemove<E> : QueueWithRemove<E> {
         // TODO: mark the node that contains the extracting
         // TODO: element as "extracted or removed", restarting
         // TODO: the operation if this node has already been removed.
-        TODO("Implement me!")
+        while (true) {
+            val curHead = head.value
+            val curHeadNext = curHead.next.value ?: return null
+            if (head.compareAndSet(curHead, curHeadNext)) {
+                if (curHeadNext.markExtractedOrRemoved()) {
+                    return curHeadNext.element
+                }
+            }
+        }
     }
 
     override fun remove(element: E): Boolean {
@@ -94,7 +116,37 @@ class MSQueueWithLinearTimeRemove<E> : QueueWithRemove<E> {
             // TODO: Do not remove `head` and `tail` physically to make
             // TODO: the algorithm simpler. In case a tail node is logically removed,
             // TODO: it will be removed physically by `enqueue(..)`.
-            TODO("Implement me!")
+            val removed = markExtractedOrRemoved()
+            removePhysically()
+            return removed
+        }
+
+        fun removePhysically() {
+            if (next.value == null) {
+                return
+            }
+            val prev = findPrev()
+            if (prev != null) {
+                val next = this.next.value
+                prev.next.getAndSet(next)
+                if (next?.extractedOrRemoved == true) {
+                    next.removePhysically()
+                }
+            }
+        }
+
+        fun findPrev(): Node? {
+            var node = head.value
+            while (true) {
+                val next = node.next.value
+                if (next == null) {
+                    return null
+                }
+                if (next == this) {
+                    return node
+                }
+                node = next
+            }
         }
     }
 }
