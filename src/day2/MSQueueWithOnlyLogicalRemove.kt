@@ -15,14 +15,14 @@ class MSQueueWithOnlyLogicalRemove<E> : QueueWithRemove<E> {
     override fun enqueue(element: E) {
         // TODO: Copy your implementation.
         while (true) {
-            val curTail = tail.value
+            val prevTail = tail.value
             val node = Node(element)
-            if (curTail.next.compareAndSet(null, node)) {
-                tail.compareAndSet(curTail, node)
+            if (prevTail.next.compareAndSet(null, node)) {
+                tail.compareAndSet(prevTail, node)
                 return
             } else {
-                curTail.next.value?.let {
-                    tail.compareAndSet(curTail, it)
+                prevTail.next.value?.let {
+                    tail.compareAndSet(prevTail, it)
                 }
             }
         }
