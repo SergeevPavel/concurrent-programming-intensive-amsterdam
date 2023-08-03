@@ -17,7 +17,14 @@ class AtomicArrayWithCAS2Simplified<E : Any>(size: Int, initialValue: E) {
 
     fun get(index: Int): E {
         // TODO: the cell can store CAS2Descriptor
-        return array[index].value as E
+        val v = array[index].value
+        return when (v) {
+            is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
+                v.getValue(index)
+            }
+            else -> v
+        } as E
+
     }
 
     fun cas2(
@@ -46,6 +53,92 @@ class AtomicArrayWithCAS2Simplified<E : Any>(size: Int, initialValue: E) {
         fun apply() {
             // TODO: Install the descriptor, update the status, and update the cells;
             // TODO: create functions for each of these three phases.
+            install()
+            applyLogical()
+            applyPhysical()
+        }
+
+        private fun install() {
+            if (status.value != UNDECIDED) {
+                return
+            }
+            if (index1 < index2) {
+                installCell(index1, expected1)
+                installCell(index2, expected2)
+            } else {
+                installCell(index2, expected2)
+                installCell(index1, expected1)
+            }
+        }
+
+        private fun installCell(index: Int, expected: E) {
+            val cell = array[index].value
+            when (cell) {
+                this -> {}
+                is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
+                    cell.apply()
+                    apply()
+                }
+                expected -> {
+                    if (!array[index].compareAndSet(expected, this)) {
+                        val newCell = array[index].value
+                        when (newCell) {
+                            this -> {}
+                            is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
+                                newCell.apply()
+                                apply()
+                            }
+                            expected -> {
+                                apply()
+                            }
+                            else -> {
+                                status.compareAndSet(UNDECIDED, FAILED)
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    status.compareAndSet(UNDECIDED, FAILED)
+                }
+            }
+
+        }
+
+        private fun applyLogical() {
+            status.compareAndSet(UNDECIDED, SUCCESS)
+        }
+
+        private fun applyPhysical() {
+            when (status.value) {
+                SUCCESS -> {
+                    array[index1].compareAndSet(this, update1)
+                    array[index2].compareAndSet(this, update2)
+                }
+                FAILED -> {
+                    array[index1].compareAndSet(this, expected1)
+                    array[index2].compareAndSet(this, expected2)
+                }
+                UNDECIDED -> throw Error("applyPhysical UNDECIDED")
+            }
+        }
+
+        fun getValue(index: Int): E {
+            return when (status.value) {
+                SUCCESS -> {
+                    when (index) {
+                        index1 -> update1
+                        index2 -> update2
+                        else -> throw Error("Wrong idx SUCCESS: $index")
+                    }
+                }
+                FAILED, UNDECIDED -> {
+                    when (index) {
+                        index1 -> expected1
+                        index2 -> expected2
+                        else -> throw Error("Wrong idx FAILED: $index")
+                    }
+                }
+            }
         }
     }
 
