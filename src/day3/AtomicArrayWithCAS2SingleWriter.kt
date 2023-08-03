@@ -16,7 +16,13 @@ class AtomicArrayWithCAS2SingleWriter<E : Any>(size: Int, initialValue: E) {
 
     fun get(index: Int): E {
         // TODO: the cell can store CAS2Descriptor
-        return array[index].value as E
+        val v = array[index].value
+        return when (v) {
+            is AtomicArrayWithCAS2SingleWriter<*>.CAS2Descriptor -> {
+                v.getValue(index)
+            }
+            else -> v
+        } as E
     }
 
     fun cas2(
@@ -47,6 +53,48 @@ class AtomicArrayWithCAS2SingleWriter<E : Any>(size: Int, initialValue: E) {
             // TODO: create functions for each of these three phases.
             // TODO: In this task, only one thread can call cas2(..),
             // TODO: so cas2(..) calls cannot be executed concurrently.
+            install()
+            applyLogical()
+            applyPhysical()
+        }
+
+        private fun install() {
+            if (!array[index1].compareAndSet(expected1, this)) {
+                status.getAndSet(FAILED)
+            }
+            if (!array[index2].compareAndSet(expected2, this)) {
+                status.getAndSet(FAILED)
+            }
+        }
+
+        private fun applyLogical() {
+            status.compareAndSet(UNDECIDED, SUCCESS)
+        }
+
+        private fun applyPhysical() {
+            if (status.value == SUCCESS) {
+                array[index1].compareAndSet(this, update1)
+                array[index2].compareAndSet(this, update2)
+            } else {
+                array[index1].compareAndSet(this, expected1)
+                array[index2].compareAndSet(this, expected2)
+            }
+        }
+
+        fun getValue(index: Int): E {
+            return if (status.value == SUCCESS) {
+                when (index) {
+                    index1 -> update1
+                    index2 -> update2
+                    else -> throw Error()
+                }
+            } else {
+                when (index) {
+                    index1 -> expected1
+                    index2 -> expected2
+                    else -> throw Error()
+                }
+            }
         }
     }
 
