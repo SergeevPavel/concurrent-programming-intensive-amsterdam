@@ -32,7 +32,8 @@ class AtomicArrayWithDCSS<E : Any>(size: Int, initialValue: E) {
             val cell = array[index].value
             when (cell) {
                 is AtomicArrayWithDCSS<*>.DCSSDescriptor -> {
-                    cell.apply()
+                    cell.applyLogical()
+                    cell.applyPhysical()
                 }
                 expected -> {
                     if (array[index].compareAndSet(expected, update)) {
@@ -98,7 +99,7 @@ class AtomicArrayWithDCSS<E : Any>(size: Int, initialValue: E) {
             }
         }
 
-        private fun applyLogical() {
+        fun applyLogical() {
             if (get(index2) == expected2) {
                 status.compareAndSet(UNDECIDED, SUCCESS)
             } else {
@@ -106,7 +107,7 @@ class AtomicArrayWithDCSS<E : Any>(size: Int, initialValue: E) {
             }
         }
 
-        private fun applyPhysical() {
+        fun applyPhysical() {
             when (status.value) {
                 SUCCESS -> {
                     array[index1].compareAndSet(this, update1)
