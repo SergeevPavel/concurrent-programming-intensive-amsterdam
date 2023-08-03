@@ -72,36 +72,26 @@ class AtomicArrayWithCAS2Simplified<E : Any>(size: Int, initialValue: E) {
         }
 
         private fun installCell(index: Int, expected: E) {
-            val cell = array[index].value
-            when (cell) {
-                this -> {}
-                is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
-                    cell.apply()
-                    apply()
-                }
-                expected -> {
-                    if (!array[index].compareAndSet(expected, this)) {
-                        val newCell = array[index].value
-                        when (newCell) {
-                            this -> {}
-                            is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
-                                newCell.apply()
-                                apply()
-                            }
-                            expected -> {
-                                apply()
-                            }
-                            else -> {
-                                status.compareAndSet(UNDECIDED, FAILED)
-                            }
+            while (true) {
+                val cell = array[index].value
+                when (cell) {
+                    this -> {
+                        break
+                    }
+                    is AtomicArrayWithCAS2Simplified<*>.CAS2Descriptor -> {
+                        cell.apply()
+                    }
+                    expected -> {
+                        if (array[index].compareAndSet(expected, this)) {
+                            break
                         }
                     }
-                }
-                else -> {
-                    status.compareAndSet(UNDECIDED, FAILED)
+                    else -> {
+                        status.compareAndSet(UNDECIDED, FAILED)
+                        break
+                    }
                 }
             }
-
         }
 
         private fun applyLogical() {
