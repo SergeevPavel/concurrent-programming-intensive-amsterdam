@@ -18,7 +18,21 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
         // TODO: When adding a new node, check whether
         // TODO: the previous tail is logically removed.
         // TODO: If so, remove it physically from the linked list.
-        TODO("Implement me!")
+        while (true) {
+            val prevTail = tail.value
+            val node = Node(element, prevTail)
+            if (prevTail.next.compareAndSet(null, node)) {
+                tail.compareAndSet(prevTail, node)
+                if (prevTail.extractedOrRemoved) {
+                    prevTail.removePhysically()
+                }
+                return
+            } else {
+                prevTail.next.value?.let {
+                    tail.compareAndSet(prevTail, it)
+                }
+            }
+        }
     }
 
     override fun dequeue(): E? {
@@ -26,7 +40,17 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
         // TODO: mark the node that contains the extracting
         // TODO: element as "extracted or removed", restarting
         // TODO: the operation if this node has already been removed.
-        TODO("Implement me!")
+        while (true) {
+            val curHead = head.value
+            val curHeadNext = curHead.next.value ?: return null
+            if (head.compareAndSet(curHead, curHeadNext)) {
+                curHeadNext.prev.getAndSet(null)
+                if (curHeadNext.markExtractedOrRemoved()) {
+                    return curHeadNext.element
+                }
+            }
+        }
+
     }
 
     override fun remove(element: E): Boolean {
@@ -114,7 +138,63 @@ class MSQueueWithConstantTimeRemove<E> : QueueWithRemove<E> {
             // TODO: it is totally fine to have a bounded number of removed nodes
             // TODO: in the linked list, especially when it significantly simplifies
             // TODO: the algorithm.
-            TODO("Implement me!")
+            val removed = markExtractedOrRemoved()
+            removePhysically()
+            return removed
+        }
+
+        fun removePhysically() {
+//            while (true) {
+//                val prevNode = prev.value
+//                val nextNode = next.value
+//                if (prevNode == null || nextNode == null) return
+//                if (prevNode.next.compareAndSet(this, nextNode)) {
+//                    while (true) {
+//                        if (nextNode.prev.compareAndSet(this, prevNode)) {
+//                            break
+//                        }
+//                    }
+//                    break
+//                }
+//            }
+
+
+            val prevNode = prev.value
+            val nextNode = next.value
+
+            if (prevNode == null || nextNode == null) {
+                return
+            }
+            prevNode.next.getAndSet(nextNode)
+            nextNode.prev.getAndSet(prevNode)
+
+            if (prevNode.extractedOrRemoved) {
+                prevNode.removePhysically()
+            }
+            if (nextNode.extractedOrRemoved) {
+                nextNode.removePhysically()
+            }
+
+//            while (true) {
+//                val prevNode = prev.value
+//                val nextNode = next.value
+//                if (prevNode != prev.value) {
+//                    continue
+//                }
+//                if (prevNode == null || nextNode == null) {
+//                    return
+//                }
+//                prevNode.next.getAndSet(nextNode)
+//                nextNode.prev.getAndSet(prevNode)
+//
+//                if (prevNode.extractedOrRemoved) {
+//                    prevNode.removePhysically()
+//                }
+//                if (nextNode.extractedOrRemoved) {
+//                    nextNode.removePhysically()
+//                }
+//                break
+//            }
         }
     }
 }
