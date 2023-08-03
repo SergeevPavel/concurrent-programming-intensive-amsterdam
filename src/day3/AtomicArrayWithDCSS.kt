@@ -74,7 +74,6 @@ class AtomicArrayWithDCSS<E : Any>(size: Int, initialValue: E) {
 
         private fun install() {
             // todo set FAILED when other expected value doesn't matches
-            if (status.value != UNDECIDED) return
             while (true) {
                 val cell = array[index1].value
                 when (cell) {
@@ -82,10 +81,10 @@ class AtomicArrayWithDCSS<E : Any>(size: Int, initialValue: E) {
                         break
                     }
                     is AtomicArrayWithDCSS<*>.DCSSDescriptor -> {
-                        cell.apply()
+                        cell.applyLogical()
+                        cell.applyPhysical()
                     }
                     expected1 -> {
-                        if (status.value != UNDECIDED) break
                         if (array[index1].compareAndSet(expected1, this)) {
                             break
                         }
