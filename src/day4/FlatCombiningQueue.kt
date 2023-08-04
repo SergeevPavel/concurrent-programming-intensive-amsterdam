@@ -9,6 +9,41 @@ class FlatCombiningQueue<E> : Queue<E> {
     private val combinerLock = atomic(false) // unlocked initially
     private val tasksForCombiner = atomicArrayOfNulls<Any?>(TASKS_FOR_COMBINER_SIZE)
 
+    private fun tryLock(): Boolean {
+        return combinerLock.compareAndSet(expect = false, update = true)
+    }
+
+    private fun releaseLock(): Boolean {
+        return combinerLock.compareAndSet(expect = true, update = false)
+    }
+
+    private fun helpOthers() {
+        for (index in 0 until tasksForCombiner.size) {
+            when (val task = tasksForCombiner[index].value) {
+                null -> {}
+                is Result<*> -> {}
+                is Dequeue -> {
+                    val result = Result(queue.removeFirstOrNull())
+                    tasksForCombiner[index].getAndSet(result)
+                }
+                else -> {
+                    val element = task as E
+                    queue.addLast(element)
+                    tasksForCombiner[index].getAndSet(Result(element))
+                }
+            }
+        }
+    }
+
+    private fun publishTask(task: Any): Int {
+        while (true) {
+            val index = randomCellIndex()
+            if (tasksForCombiner[index].compareAndSet(null, task)) {
+                return index
+            }
+        }
+    }
+
     override fun enqueue(element: E) {
         // TODO: Make this code thread-safe using the flat-combining technique.
         // TODO: 1.  Try to become a combiner by
@@ -21,7 +56,30 @@ class FlatCombiningQueue<E> : Queue<E> {
         // TODO:      `null` with the element. Wait until either the cell state
         // TODO:      updates to `Result` (do not forget to clean it in this case),
         // TODO:      or `combinerLock` becomes available to acquire.
-        queue.addLast(element)
+
+        if (tryLock()) {
+            queue.addLast(element)
+            helpOthers()
+            releaseLock()
+        } else {
+            val index = publishTask(element as Any)
+            while (true) {
+                when (val result = tasksForCombiner[index].value) {
+                    is Result<*> -> {
+                        tasksForCombiner[index].getAndSet(null)
+                        return
+                    }
+                }
+                if (tryLock()) {
+                    if (tasksForCombiner[index].getAndSet(null) !is Result<*>) {
+                        queue.addLast(element)
+                    }
+                    helpOthers()
+                    releaseLock()
+                    return
+                }
+            }
+        }
     }
 
     override fun dequeue(): E? {
@@ -36,7 +94,36 @@ class FlatCombiningQueue<E> : Queue<E> {
         // TODO:      `null` with `Dequeue`. Wait until either the cell state
         // TODO:      updates to `Result` (do not forget to clean it in this case),
         // TODO:      or `combinerLock` becomes available to acquire.
-        return queue.removeFirstOrNull()
+        if (tryLock()) {
+            val element = queue.removeFirstOrNull()
+            helpOthers()
+            releaseLock()
+            return element
+        } else {
+            val index = publishTask(Dequeue)
+            while (true) {
+                when (val result = tasksForCombiner[index].value) {
+                    is Result<*> -> {
+                        tasksForCombiner[index].getAndSet(null)
+                        return result.value as E?
+                    }
+                }
+                if (tryLock()) {
+                    val element = when (val result = tasksForCombiner[index].getAndSet(null)) {
+                        is Result<*> -> {
+                            result.value
+                        }
+                        else -> {
+                            queue.removeFirstOrNull()
+                        }
+                    } as E?
+                    helpOthers()
+                    releaseLock()
+                    return element
+                }
+            }
+        }
+
     }
 
     private fun randomCellIndex(): Int =
