@@ -206,7 +206,7 @@ To test your solution, please run:
 In [`src/day4/FlatCombiningQueue.kt`](src/day4/FlatCombiningQueue.kt), implement a concurrent queue via the
 _flat-combining_ technique,
 using a sequential queue under the hood. You might be interested in the corresponding
-[academic paper]((https://dl.acm.org/doi/pdf/10.1145/1810479.1810540?casa_token=Yo13gxOeFhwAAAAA:qS33gvUFNhI4t_2ioHnZz0egK8PFq0Mg7MT0ma1-26aeQYKk7aZBzEHEY6iFMiu-GEmzsBMuSibDkg))
+[academic paper](https://dl.acm.org/doi/pdf/10.1145/1810479.1810540)
 
 To test your solution, please run:
 
