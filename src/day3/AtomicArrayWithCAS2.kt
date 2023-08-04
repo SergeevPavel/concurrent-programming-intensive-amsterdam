@@ -17,23 +17,35 @@ class AtomicArrayWithCAS2<E : Any>(size: Int, initialValue: E) {
     }
 
     fun get(index: Int): E {
-        // TODO: the cell can store a descriptor
         val v = array[index].value
         return when (v) {
             is AtomicArrayWithCAS2<*>.CAS2Descriptor -> {
                 v.getValue(index)
+            }
+            is AtomicArrayWithCAS2<*>.DCSSDescriptor -> {
+                when (val v = v.getValue(index)) {
+                    is AtomicArrayWithCAS2<*>.CAS2Descriptor -> {
+                        v.getValue(index)
+                    }
+                    else -> {
+                        v
+                    }
+                }
             }
             else -> v
         } as E
     }
 
     fun cas(index: Int, expected: E, update: E): Boolean {
-        // TODO: the cell can store a descriptor
         while (true) {
             val cell = array[index].value
             when (cell) {
                 is AtomicArrayWithCAS2<*>.CAS2Descriptor -> {
                     cell.apply()
+                }
+                is AtomicArrayWithCAS2<*>.DCSSDescriptor -> {
+                    cell.applyLogical()
+                    cell.applyPhysical()
                 }
                 expected -> {
                     if (array[index].compareAndSet(expected, update)) {
@@ -91,6 +103,12 @@ class AtomicArrayWithCAS2<E : Any>(size: Int, initialValue: E) {
             }
         }
 
+        private fun dcss(index: Int, expected: Any, update: Any): Boolean {
+            val descriptor = DCSSDescriptor(index, expected, update, this, UNDECIDED)
+            descriptor.apply()
+            return descriptor.status.value === SUCCESS
+        }
+
         private fun installCell(index: Int, expected: E) {
             while (true) {
                 val cell = array[index].value
@@ -101,9 +119,17 @@ class AtomicArrayWithCAS2<E : Any>(size: Int, initialValue: E) {
                     is AtomicArrayWithCAS2<*>.CAS2Descriptor -> {
                         cell.apply()
                     }
+                    is AtomicArrayWithCAS2<*>.DCSSDescriptor -> {
+                        cell.applyLogical()
+                        cell.applyPhysical()
+                    }
                     expected -> {
-                        if (array[index].compareAndSet(expected, this)) {
+                        if (dcss(index, expected, this)) {
                             break
+                        } else {
+                            if (status.value != UNDECIDED) {
+                                break
+                            }
                         }
                     }
                     else -> {
@@ -152,6 +178,92 @@ class AtomicArrayWithCAS2<E : Any>(size: Int, initialValue: E) {
         }
     }
 
+    inner class DCSSDescriptor(
+        private val index1: Int,
+        private val expected1: Any,
+        private val update1: Any,
+        private val cas2Descriptor: CAS2Descriptor,
+        private val cas2StatusExpected: Status
+    ) {
+        val status = atomic(UNDECIDED)
+
+        fun apply() {
+            install()
+            applyLogical()
+            applyPhysical()
+        }
+
+        private fun install() {
+//            if (cas2Descriptor.status.value != cas2StatusExpected) {
+//                status.compareAndSet(UNDECIDED, FAILED)
+//                return
+//            }
+            while (true) {
+                val cell = array[index1].value
+                when (cell) {
+                    this -> {
+                        break
+                    }
+                    is AtomicArrayWithCAS2<*>.CAS2Descriptor -> {
+                        cell.apply()
+                    }
+                    is AtomicArrayWithCAS2<*>.DCSSDescriptor -> {
+                        cell.applyLogical()
+                        cell.applyPhysical()
+                    }
+                    expected1 -> {
+                        if (array[index1].compareAndSet(expected1, this)) {
+                            break
+                        }
+                    }
+                    else -> {
+                        status.compareAndSet(UNDECIDED, FAILED)
+                        break
+                    }
+                }
+
+            }
+        }
+
+        fun applyLogical() {
+            if (cas2Descriptor.status.value == cas2StatusExpected) {
+                status.compareAndSet(UNDECIDED, SUCCESS)
+            } else {
+                status.compareAndSet(UNDECIDED, FAILED)
+            }
+        }
+
+        fun applyPhysical() {
+            when (status.value) {
+                SUCCESS -> {
+                    array[index1].compareAndSet(this, update1)
+                }
+                FAILED -> {
+                    array[index1].compareAndSet(this, expected1)
+                }
+                UNDECIDED -> throw Error("applyPhysical UNDECIDED")
+            }
+        }
+
+        fun getValue(index: Int): Any {
+            return when (status.value) {
+                SUCCESS -> {
+                    when (index) {
+                        index1 -> update1
+                        else -> throw Error("Wrong idx SUCCESS: $index")
+                    }
+                }
+                FAILED, UNDECIDED -> {
+                    when (index) {
+                        index1 -> expected1
+                        else -> throw Error("Wrong idx FAILED: $index")
+                    }
+                }
+            }
+
+        }
+
+    }
 
     enum class Status {
         UNDECIDED, SUCCESS, FAILED
