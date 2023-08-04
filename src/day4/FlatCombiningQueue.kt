@@ -44,6 +44,21 @@ class FlatCombiningQueue<E> : Queue<E> {
         }
     }
 
+    private fun retrieveResult(index: Int): Result<E>? {
+        return when (val result = tasksForCombiner[index].value) {
+            is Result<*> -> {
+                tasksForCombiner[index].compareAndSet(result, null)
+                result as Result<E>
+            }
+
+            else -> null
+        }
+    }
+
+    private fun dropTask(index: Int): Any? {
+        return tasksForCombiner[index].getAndSet(null)
+    }
+
     override fun enqueue(element: E) {
         // TODO: Make this code thread-safe using the flat-combining technique.
         // TODO: 1.  Try to become a combiner by
@@ -64,14 +79,11 @@ class FlatCombiningQueue<E> : Queue<E> {
         } else {
             val index = publishTask(element as Any)
             while (true) {
-                when (val result = tasksForCombiner[index].value) {
-                    is Result<*> -> {
-                        tasksForCombiner[index].getAndSet(null)
-                        return
-                    }
+                retrieveResult(index)?.let {
+                    return
                 }
                 if (tryLock()) {
-                    if (tasksForCombiner[index].getAndSet(null) !is Result<*>) {
+                    if (dropTask(index) !is Result<*>) {
                         queue.addLast(element)
                     }
                     helpOthers()
@@ -102,14 +114,11 @@ class FlatCombiningQueue<E> : Queue<E> {
         } else {
             val index = publishTask(Dequeue)
             while (true) {
-                when (val result = tasksForCombiner[index].value) {
-                    is Result<*> -> {
-                        tasksForCombiner[index].getAndSet(null)
-                        return result.value as E?
-                    }
+                retrieveResult(index)?.let {
+                    return it.value
                 }
                 if (tryLock()) {
-                    val element = when (val result = tasksForCombiner[index].getAndSet(null)) {
+                    val element = when (val result = dropTask(index)) {
                         is Result<*> -> {
                             result.value
                         }
@@ -123,7 +132,6 @@ class FlatCombiningQueue<E> : Queue<E> {
                 }
             }
         }
-
     }
 
     private fun randomCellIndex(): Int =
